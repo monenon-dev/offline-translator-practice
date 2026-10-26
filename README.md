@@ -1,32 +1,5 @@
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+# Offline Translator
+서버 없이 브라우저에서 동작하는 영·한·일·중 문서 번역 + 후편집 도구 (transformers.js, `Xenova/m2m100_418M` q8, Web Worker, WASM).
+실행: `pnpm install` → `pnpm dev` → http://localhost:5173 (첫 실행 시 모델 약 640MB 다운로드, 이후 브라우저 캐시 사용)
+기능: 원문/번역 언어 선택, 붙여넣기·.txt 열기 → 문단별·문장 단위 순차 번역(진행률·스피너) → 원문/번역 행 정렬, 숫자 불일치 경고
+후편집: 번역문 클릭해 수정, "수정됨" 표시·개수, 원본 번역으로 되돌리기, 수정본 우선으로 .txt 내보내기

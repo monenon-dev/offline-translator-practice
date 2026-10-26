@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 개인 면접 준비 메모
+interview-keywords.md

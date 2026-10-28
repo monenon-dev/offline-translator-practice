@@ -19,4 +19,5 @@ const crossOriginIsolation: Plugin = {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [crossOriginIsolation, react(), tailwindcss()],
+  server: { port: 3000, strictPort: true },
 })

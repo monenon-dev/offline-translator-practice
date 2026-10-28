@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState, type ChangeEvent } from 'react'
 import { compareNumbers, formatMismatch } from './numberCheck'
 import type { Backend, Lang, WorkerMessage, WorkerRequest } from './translator.worker'
+import type { SttMessage, SttRequest } from './stt.worker'
 
 const LANG_NAMES: Record<Lang, string> = {
   ko: '한국어',
@@ -15,6 +16,19 @@ const STATUS_TEXT: Record<Status, string> = {
   loading: '로딩 중',
   ready: '준비 완료',
   error: '오류',
+}
+
+type Recording = 'idle' | 'recording' | 'transcribing'
+
+// 녹음 Blob을 Whisper 입력 형식(16kHz 모노 Float32Array)으로 바꾼다
+async function decodeAudio(blob: Blob): Promise<Float32Array> {
+  const ctx = new AudioContext({ sampleRate: 16000 })
+  try {
+    const buffer = await ctx.decodeAudioData(await blob.arrayBuffer())
+    return buffer.getChannelData(0)
+  } finally {
+    ctx.close()
+  }
 }
 
 type Paragraph = {
@@ -92,6 +106,11 @@ function App() {
   const [tgtLang, setTgtLang] = useState<Lang>('en')
   // 현재 결과 표가 어떤 언어쌍으로 번역됐는지 (번역 후 선택을 바꿔도 머리글이 맞도록)
   const [resultLangs, setResultLangs] = useState<{ src: Lang; tgt: Lang } | null>(null)
+  const sttWorkerRef = useRef<Worker | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const [sttStatus, setSttStatus] = useState<Status>('loading')
+  const [sttProgress, setSttProgress] = useState(0)
+  const [recording, setRecording] = useState<Recording>('idle')
 
   useEffect(() => {
     const worker = new Worker(new URL('./translator.worker.ts', import.meta.url), { type: 'module' })
@@ -122,6 +141,63 @@ function App() {
     workerRef.current = worker
     return () => worker.terminate()
   }, [])
+
+  useEffect(() => {
+    const worker = new Worker(new URL('./stt.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (e: MessageEvent<SttMessage>) => {
+      const msg = e.data
+      if (msg.type === 'progress') {
+        setSttProgress(msg.progress)
+      } else if (msg.type === 'ready') {
+        setSttStatus('ready')
+      } else if (msg.type === 'error') {
+        setSttStatus('error')
+        setNotice(`음성 인식 모델을 불러오지 못했습니다: ${msg.message}`)
+      } else if (msg.type === 'result') {
+        setRecording('idle')
+        if (!msg.text) {
+          setNotice('인식된 음성이 없습니다. 다시 녹음해 주세요.')
+          return
+        }
+        // 인식 결과는 새 문단으로 원문 끝에 붙인다
+        setSourceText((prev) => (prev.trim() ? `${prev.trimEnd()}\n\n${msg.text}` : msg.text))
+      } else {
+        setRecording('idle')
+        setNotice(`음성 인식 오류: ${msg.message}`)
+      }
+    }
+    sttWorkerRef.current = worker
+    return () => worker.terminate()
+  }, [])
+
+  const handleRecordStart = async () => {
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setNotice('마이크를 사용할 수 없습니다. 브라우저의 마이크 권한을 확인해 주세요.')
+      return
+    }
+    const lang = srcLang
+    const chunks: Blob[] = []
+    const recorder = new MediaRecorder(stream)
+    recorder.ondataavailable = (e) => chunks.push(e.data)
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop())
+      setRecording('transcribing')
+      try {
+        const audio = await decodeAudio(new Blob(chunks, { type: recorder.mimeType }))
+        sttWorkerRef.current?.postMessage({ type: 'transcribe', audio, lang } satisfies SttRequest, [audio.buffer])
+      } catch {
+        setRecording('idle')
+        setNotice('녹음한 소리를 읽지 못했습니다. 다시 녹음해 주세요.')
+      }
+    }
+    recorderRef.current = recorder
+    recorder.start()
+    setNotice(null)
+    setRecording('recording')
+  }
 
   const handleTranslate = () => {
     const sources = splitParagraphs(sourceText)
@@ -249,10 +325,28 @@ function App() {
               </select>
               {srcLang === tgtLang && <span className="text-xs text-red-600">원문과 다른 언어를 고르세요.</span>}
             </div>
-            <label className="cursor-pointer text-sm text-blue-600 hover:underline">
-              .txt 파일 열기
-              <input type="file" accept=".txt,text/plain" onChange={handleFileOpen} className="hidden" />
-            </label>
+            <div className="flex items-center gap-3 text-sm">
+              {sttStatus === 'loading' && (
+                <span className="text-xs text-gray-400">음성 인식 로딩 {Math.round(sttProgress)}%</span>
+              )}
+              {recording === 'recording' ? (
+                <button onClick={() => recorderRef.current?.stop()} className="text-red-600 hover:underline">
+                  ■ 녹음 정지
+                </button>
+              ) : (
+                <button
+                  onClick={handleRecordStart}
+                  disabled={sttStatus !== 'ready' || recording === 'transcribing'}
+                  className="text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+                >
+                  {recording === 'transcribing' ? '음성 인식 중…' : '🎤 녹음'}
+                </button>
+              )}
+              <label className="cursor-pointer text-blue-600 hover:underline">
+                .txt 파일 열기
+                <input type="file" accept=".txt,text/plain" onChange={handleFileOpen} className="hidden" />
+              </label>
+            </div>
           </div>
           <textarea
             value={sourceText}
